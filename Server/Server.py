@@ -2,6 +2,7 @@ import socket
 import threading
 import time
 import random
+from Questions import questions
 
 UDP_PORT = 13117
 TCP_PORT = random.randint(1025, 65535)
@@ -9,7 +10,10 @@ SERVER_NAME = 'Mystic'
 MAGIC_COOKIE = b'\xab\xcd\xdc\xba'
 OFFER_MESSAGE_TYPE = b'\x02'
 clients = []
-game_start_timer = None  # Timer for starting the game
+answers = {}
+game_start_timer = None
+current_question = None
+disqualified_players = set()
 
 def broadcast_udp():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
@@ -19,33 +23,76 @@ def broadcast_udp():
             udp_socket.sendto(message, ('<broadcast>', UDP_PORT))
             time.sleep(1)
 
-def handle_client(conn, addr):
-    global game_start_timer
+def reset_game():
+    global clients, answers, game_start_timer, current_question, disqualified_players
+    clients.clear()
+    answers.clear()
+    disqualified_players.clear()
+    current_question = None
+    game_start_timer = None
+    print("Game over, sending out offer requests...")
+
+def handle_client(conn, addr, player_name):
+    global answers, disqualified_players
 
     try:
-        player_name = conn.recv(1024).decode().strip()
-        clients.append((player_name, conn))
-        print(f"{player_name} connected from {addr}")
+        answer = conn.recv(1024).decode().strip().upper()
+        print(f"{player_name} answered {answer}")
+        if answer in ['Y', 'T', '1']:
+            answers[player_name] = True
+        elif answer in ['N', 'F', '0']:
+            answers[player_name] = False
+        else:
+            disqualified_players.add(player_name)
+            conn.sendall("Invalid answer, you are disqualified!".encode())
+            conn.close()
+            return
 
-        # Reset the game start timer every time a new player connects
-        if game_start_timer is not None:
-            game_start_timer.cancel()
-        game_start_timer = threading.Timer(10.0, start_game)
-        game_start_timer.start()
-
+        check_answers(player_name)
     except Exception as e:
         print(f'Error handling client {addr}: {e}')
+        conn.close()
+
+def check_answers(player_name):
+    global clients, answers, current_question, disqualified_players
+
+    correct_answer = current_question['is_true'] if current_question else None
+
+    if player_name in disqualified_players:
+        return
+
+    if answers.get(player_name) == correct_answer:
+        end_game(winner=player_name)
+        return
+
+    if len(disqualified_players) == len(clients):
+        end_game()
+
+def end_game(winner=None):
+    global clients, game_start_timer
+
+    message = f"Game over!\nCongratulations to the winner: {winner}" if winner else "Game over!\nNo correct answers."
+    print(message)
+
+    for _, player_conn in clients:
+        try:
+            player_conn.sendall(message.encode())
+        finally:
+            player_conn.close()
+
+    reset_game()
 
 def start_game():
-    global game_start_timer
-    game_start_timer = None  # Clear the timer once the game starts
+    global game_start_timer, clients, answers, current_question, disqualified_players
 
-    welcome_message = "Welcome to the Mystic server, where we are answering trivia questions about Aston Villa FC.\n"
+    current_question = random.choice(questions)
+    question_text = current_question['question']
+
+    welcome_message = "Welcome to the Mystic server. Let's answer a trivia question.\n"
     player_list = '\n'.join(f"Player {index + 1}: {name}" for index, (name, _) in enumerate(clients))
-    question = "True or false: Aston Villa's current manager is Pep Guardiola"
+    full_message = f"{welcome_message}{player_list}\n==\n{question_text}\nTrue or False?"
 
-    full_message = f"{welcome_message}{player_list}\n==\n{question}\n"
-
+    print(full_message)
     for _, conn in clients:
         try:
             conn.sendall(full_message.encode())
@@ -53,6 +100,7 @@ def start_game():
             print(f"Error sending to client: {e}")
 
 def tcp_server():
+    global clients, game_start_timer
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
         tcp_socket.bind(('', TCP_PORT))
         tcp_socket.listen()
@@ -60,7 +108,17 @@ def tcp_server():
 
         while True:
             conn, addr = tcp_socket.accept()
-            threading.Thread(target=handle_client, args=(conn, addr)).start()
+            player_name = conn.recv(1024).decode().strip()
+            clients.append((player_name, conn))
+            print(f"{player_name} connected from {addr}")
+
+            if not game_start_timer:
+                game_start_timer = threading.Timer(10.0, start_game)
+                game_start_timer.start()
+            else:
+                game_start_timer.cancel()
+                game_start_timer = threading.Timer(10.0, start_game)
+                game_start_timer.start()
 
 def main():
     threading.Thread(target=broadcast_udp).start()
