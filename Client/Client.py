@@ -1,19 +1,32 @@
 import socket
 import threading
 import select
+import sys
+import uuid
+import random
+
+# Import platform-specific libraries for capturing key presses
+if sys.platform == 'win32':
+    import msvcrt
+else:
+    import tty
+    import termios
 
 class TriviaClient:
     UDP_PORT = 13117
     BUFFER_SIZE = 1024
+    PLAYER_NAMES = ['QuizzicalQuokka', 'BrainyBison', 'AstuteAlpaca', 'SavvySeahorse', 'CleverCobra']
 
-    def __init__(self, player_name):
-        self.player_name = player_name
+    def __init__(self):
+        base_name = random.choice(self.PLAYER_NAMES)
+        unique_id = str(uuid.uuid4())[:8]  # First 8 characters of a UUID
+        self.player_name = f"{base_name}_{unique_id}"
         self.tcp_socket = None
 
     def listen_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)  # Add this line
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         udp_socket.bind(('', self.UDP_PORT))
 
         while True:
@@ -42,14 +55,28 @@ class TriviaClient:
                 data = self.tcp_socket.recv(self.BUFFER_SIZE).decode()
                 if data:
                     print(data, end='')
-                    if 'True or false' in data:  # Assuming the question format includes this string
-                        answer = input()  # Get user input for the answer
+                    if 'True or false' in data:
+                        answer = self.get_keypress()
                         self.tcp_socket.sendall(f"{answer}\n".encode())
 
+    def get_keypress(self):
+        valid_keys = {'T', 'Y', '1', 'F', 'N', '0'}
+        while True:
+            if sys.platform == 'win32':
+                key = msvcrt.getch().decode().upper()
+            else:
+                fd = sys.stdin.fileno()
+                old_settings = termios.tcgetattr(fd)
+                try:
+                    tty.setraw(sys.stdin.fileno())
+                    key = sys.stdin.read(1).upper()
+                finally:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            if key in valid_keys:
+                return key
 
 def main():
-    player_name = input("Enter your player name: ")
-    client = TriviaClient(player_name)
+    client = TriviaClient()
     threading.Thread(target=client.listen_udp).start()
 
 if __name__ == '__main__':

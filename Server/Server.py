@@ -11,14 +11,23 @@ class TriviaServer:
     OFFER_MESSAGE_TYPE = b'\x02'
     GAME_START_DELAY = 10  # 10 seconds delay before the game starts
 
+
     def __init__(self):
         self.clients = []
         self.tcp_port = random.randint(1025, 65535)
         self.game_start_timer = None
+        self.player_count = 0  # Initialize player count
         self.trivia_questions = [
-            {"question": "True or false: Python is a type of snake.", "answer": False},
-            {"question": "True or false: The capital of France is Paris.", "answer": True},
-            # Add more trivia questions here
+            {"question": "True or false: Mount Hermon is the highest point in Israel.", "answer": True},
+            {"question": "True or false: The Jordan River is the longest river in Israel.", "answer": True},
+            {"question": "True or false: The Negev Desert covers more than half of Israel's land area.", "answer": True},
+            {"question": "True or false: Israel has no access to the Red Sea.", "answer": False},
+            {"question": "True or false: The Dead Sea is the lowest point on Earth's surface.", "answer": True},
+            {"question": "True or false: Mount Carmel is located in the southern part of Israel.", "answer": False},
+            {"question": "True or false: The Sea of Galilee is a freshwater lake.", "answer": True},
+            {"question": "True or false: The Yarkon River is in Jerusalem.", "answer": False},
+            {"question": "True or false: Israel shares a border with Lebanon.", "answer": True},
+            {"question": "True or false: The Golan Heights is a mountain range in eastern Israel.", "answer": False}
         ]
         self.current_question = None
 
@@ -34,8 +43,10 @@ class TriviaServer:
     def handle_client(self, conn, addr):
         try:
             player_name = conn.recv(1024).decode().strip()
+            self.player_count += 1  # Increment player count for each connection
             self.clients.append((player_name, conn))
-            print(f"{player_name} connected from {addr}")
+
+            print(f"Player {self.player_count}: {player_name}")  # Display player number and name
 
             if self.game_start_timer:
                 self.game_start_timer.cancel()
@@ -58,13 +69,21 @@ class TriviaServer:
                         conn.close()
                         break
 
+
         except Exception as e:
             print(f'Error handling client {addr}: {e}')
-            self.clients.remove((player_name, conn))
+            if (player_name, conn) in self.clients:
+                self.clients.remove((player_name, conn))
 
     def check_answer(self, answer):
+        # Check if the answer is one of the allowed keys
+        if answer.upper() not in ['T', 'Y', '1', 'F', 'N', '0']:
+            return False  # Automatically wrong if the key is not allowed
+
+        # Assuming 'T', 'Y', '1' are considered true, and 'F', 'N', '0' are false
+        is_true_answer = answer.upper() in ['T', 'Y', '1']
         correct_answer = self.current_question["answer"]
-        return (answer.lower() in ['t', '1']) == correct_answer
+        return is_true_answer == correct_answer
 
     def broadcast_message(self, message):
         for _, conn in self.clients:
