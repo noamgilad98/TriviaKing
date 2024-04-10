@@ -1,70 +1,115 @@
 import socket
 import threading
-import time
 import random
+import time
 
-UDP_PORT = 13117
-TCP_PORT = random.randint(1025, 65535)
-SERVER_NAME = 'Mystic'
-MAGIC_COOKIE = b'\xab\xcd\xdc\xba'
-OFFER_MESSAGE_TYPE = b'\x02'
-clients = []
-game_start_timer = None  # Timer for starting the game
 
-def broadcast_udp():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        while True:
-            message = MAGIC_COOKIE + OFFER_MESSAGE_TYPE + SERVER_NAME.encode().ljust(32) + TCP_PORT.to_bytes(2, 'big')
-            udp_socket.sendto(message, ('<broadcast>', UDP_PORT))
-            time.sleep(1)
+class TriviaServer:
+    UDP_PORT = 13117
+    SERVER_NAME = 'Mystic'
+    MAGIC_COOKIE = b'\xab\xcd\xdc\xba'
+    OFFER_MESSAGE_TYPE = b'\x02'
+    GAME_START_DELAY = 10  # 10 seconds delay before the game starts
 
-def handle_client(conn, addr):
-    global game_start_timer
+    def __init__(self):
+        self.clients = []
+        self.tcp_port = random.randint(1025, 65535)
+        self.game_start_timer = None
+        self.trivia_questions = [
+            {"question": "True or false: Python is a type of snake.", "answer": False},
+            {"question": "True or false: The capital of France is Paris.", "answer": True},
+            # Add more trivia questions here
+        ]
+        self.current_question = None
 
-    try:
-        player_name = conn.recv(1024).decode().strip()
-        clients.append((player_name, conn))
-        print(f"{player_name} connected from {addr}")
+    def broadcast_udp(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            while True:
+                message = self.MAGIC_COOKIE + self.OFFER_MESSAGE_TYPE + self.SERVER_NAME.encode().ljust(
+                    32) + self.tcp_port.to_bytes(2, 'big')
+                udp_socket.sendto(message, ('<broadcast>', self.UDP_PORT))
+                time.sleep(1)
 
-        # Reset the game start timer every time a new player connects
-        if game_start_timer is not None:
-            game_start_timer.cancel()
-        game_start_timer = threading.Timer(10.0, start_game)
-        game_start_timer.start()
-
-    except Exception as e:
-        print(f'Error handling client {addr}: {e}')
-
-def start_game():
-    global game_start_timer
-    game_start_timer = None  # Clear the timer once the game starts
-
-    welcome_message = "Welcome to the Mystic server, where we are answering trivia questions about Aston Villa FC.\n"
-    player_list = '\n'.join(f"Player {index + 1}: {name}" for index, (name, _) in enumerate(clients))
-    question = "True or false: Aston Villa's current manager is Pep Guardiola"
-
-    full_message = f"{welcome_message}{player_list}\n==\n{question}\n"
-
-    for _, conn in clients:
+    def handle_client(self, conn, addr):
         try:
-            conn.sendall(full_message.encode())
+            player_name = conn.recv(1024).decode().strip()
+            self.clients.append((player_name, conn))
+            print(f"{player_name} connected from {addr}")
+
+            if self.game_start_timer:
+                self.game_start_timer.cancel()
+
+            self.game_start_timer = threading.Timer(self.GAME_START_DELAY, self.start_game)
+            self.game_start_timer.start()
+
+            while True:  # Listen for answers from this client
+                answer = conn.recv(1024).decode().strip()
+                if answer:
+                    correct = self.check_answer(answer)
+                    if correct:
+                        message = f"{player_name} is correct! {player_name} wins!\n"
+                        self.broadcast_message(message)
+                        self.reset_game()
+                        break
+                    else:
+                        conn.sendall("Wrong answer! You are disqualified.\n".encode())
+                        self.clients.remove((player_name, conn))
+                        conn.close()
+                        break
+
         except Exception as e:
-            print(f"Error sending to client: {e}")
+            print(f'Error handling client {addr}: {e}')
+            self.clients.remove((player_name, conn))
 
-def tcp_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.bind(('', TCP_PORT))
-        tcp_socket.listen()
-        print(f"Server started, listening on IP address {tcp_socket.getsockname()[0]} and port {TCP_PORT}")
+    def check_answer(self, answer):
+        correct_answer = self.current_question["answer"]
+        return (answer.lower() in ['t', '1']) == correct_answer
 
-        while True:
-            conn, addr = tcp_socket.accept()
-            threading.Thread(target=handle_client, args=(conn, addr)).start()
+    def broadcast_message(self, message):
+        for _, conn in self.clients:
+            try:
+                conn.sendall(message.encode())
+            except Exception as e:
+                print(f"Error sending to client: {e}")
+
+    def reset_game(self):
+        self.clients = []
+        # Code to reset the game and start broadcasting offers again
+        threading.Thread(target=self.broadcast_udp).start()
+
+    def start_game(self):
+        if not self.clients:
+            return
+
+        self.current_question = random.choice(self.trivia_questions)
+        question = self.current_question["question"]
+        print("Starting the game!")
+        for player_name, conn in self.clients:
+            try:
+                conn.sendall(f"{question}\n".encode())
+            except Exception as e:
+                print(f"Error sending to client {player_name}: {e}")
+
+
+
+    def tcp_server(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+            tcp_socket.bind(('', self.tcp_port))
+            tcp_socket.listen()
+            print(f"Server started, listening on IP address {tcp_socket.getsockname()[0]} and port {self.tcp_port}")
+
+            while True:
+                conn, addr = tcp_socket.accept()
+                threading.Thread(target=self.handle_client, args=(conn, addr)).start()
+                # Here you can also start a new thread to listen for client answers
+
 
 def main():
-    threading.Thread(target=broadcast_udp).start()
-    tcp_server()
+    server = TriviaServer()
+    threading.Thread(target=server.broadcast_udp).start()
+    server.tcp_server()
+
 
 if __name__ == '__main__':
     main()
