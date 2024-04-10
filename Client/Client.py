@@ -4,6 +4,7 @@ import select
 import sys
 import uuid
 import random
+import time
 
 # Import platform-specific libraries for capturing key presses
 if sys.platform == 'win32':
@@ -12,6 +13,24 @@ else:
     import tty
     import termios
 
+
+def get_keypress():
+    valid_keys = {'T', 'Y', '1', 'F', 'N', '0'}
+    while True:
+        if sys.platform == 'win32':
+            key = msvcrt.getch().decode().upper()
+        else:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                key = sys.stdin.read(1).upper()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if key in valid_keys:
+            return key
+
+
 class TriviaClient:
     UDP_PORT = 13117
     BUFFER_SIZE = 1024
@@ -19,8 +38,9 @@ class TriviaClient:
 
     def __init__(self):
         base_name = random.choice(self.PLAYER_NAMES)
-        unique_id = str(uuid.uuid4())[:8]  # First 8 characters of a UUID
-        self.player_name = f"{base_name}_{unique_id}"
+        unique_id = str(uuid.uuid4())[:8]  # Increase length for more uniqueness
+        timestamp = str(int(time.time()))
+        self.player_name = f"{base_name}_{timestamp}_{unique_id}"
         self.tcp_socket = None
 
     def listen_udp(self):
@@ -55,29 +75,18 @@ class TriviaClient:
                 data = self.tcp_socket.recv(self.BUFFER_SIZE).decode()
                 if data:
                     print(data, end='')
-                    if 'True or false' in data:
-                        answer = self.get_keypress()
+                    if "Game over!" in data:
+                        print("Server disconnected, listening for offer requests...")
+                        return  # Exit the game loop and go back to listening for UDP offers
+                    elif 'True or false' in data:
+                        answer = get_keypress()
                         self.tcp_socket.sendall(f"{answer}\n".encode())
 
-    def get_keypress(self):
-        valid_keys = {'T', 'Y', '1', 'F', 'N', '0'}
-        while True:
-            if sys.platform == 'win32':
-                key = msvcrt.getch().decode().upper()
-            else:
-                fd = sys.stdin.fileno()
-                old_settings = termios.tcgetattr(fd)
-                try:
-                    tty.setraw(sys.stdin.fileno())
-                    key = sys.stdin.read(1).upper()
-                finally:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            if key in valid_keys:
-                return key
 
 def main():
     client = TriviaClient()
     threading.Thread(target=client.listen_udp).start()
+
 
 if __name__ == '__main__':
     main()

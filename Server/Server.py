@@ -11,12 +11,12 @@ class TriviaServer:
     OFFER_MESSAGE_TYPE = b'\x02'
     GAME_START_DELAY = 10  # 10 seconds delay before the game starts
 
-
     def __init__(self):
         self.clients = []
         self.tcp_port = random.randint(1025, 65535)
         self.game_start_timer = None
         self.player_count = 0  # Initialize player count
+        self.game_in_progress = False
         self.trivia_questions = [
             {"question": "True or false: Mount Hermon is the highest point in Israel.", "answer": True},
             {"question": "True or false: The Jordan River is the longest river in Israel.", "answer": True},
@@ -43,10 +43,10 @@ class TriviaServer:
     def handle_client(self, conn, addr):
         try:
             player_name = conn.recv(1024).decode().strip()
-            self.player_count += 1  # Increment player count for each connection
+            self.player_count += 1
             self.clients.append((player_name, conn))
 
-            print(f"Player {self.player_count}: {player_name}")  # Display player number and name
+            print(f"Player {self.player_count}: {player_name}")
 
             if self.game_start_timer:
                 self.game_start_timer.cancel()
@@ -54,24 +54,25 @@ class TriviaServer:
             self.game_start_timer = threading.Timer(self.GAME_START_DELAY, self.start_game)
             self.game_start_timer.start()
 
-            while True:  # Listen for answers from this client
+            while True:
                 answer = conn.recv(1024).decode().strip()
                 if answer:
                     correct = self.check_answer(answer)
                     if correct:
-                        message = f"{player_name} is correct! {player_name} wins!\n"
+                        message = f"Game over!\nCongratulations to the winner: {player_name}\n"
                         self.broadcast_message(message)
                         self.reset_game()
-                        break
+                        break  # Exit the loop as the game is over
                     else:
-                        conn.sendall("Wrong answer! You are disqualified.\n".encode())
-                        self.clients.remove((player_name, conn))
-                        conn.close()
-                        break
-
+                        # Send a message to this client only, do not disqualify or remove
+                        conn.sendall("Wrong answer, try again!\n".encode())
+                        # Do not break here; let the client stay for the next question or round
 
         except Exception as e:
             print(f'Error handling client {addr}: {e}')
+
+        finally:
+            # Connection closing is handled in reset_game method after a winner is determined
             if (player_name, conn) in self.clients:
                 self.clients.remove((player_name, conn))
 
@@ -93,14 +94,18 @@ class TriviaServer:
                 print(f"Error sending to client: {e}")
 
     def reset_game(self):
+        print("Game over, sending out offer requests...")
+        for _, conn in self.clients:
+            conn.close()
         self.clients = []
-        # Code to reset the game and start broadcasting offers again
+        self.game_in_progress = False
         threading.Thread(target=self.broadcast_udp).start()
 
     def start_game(self):
-        if not self.clients:
-            return
+        if not self.clients or self.game_in_progress:
+            return  # Don't start the game if it's already in progress or no clients are connected
 
+        self.game_in_progress = True
         self.current_question = random.choice(self.trivia_questions)
         question = self.current_question["question"]
         print("Starting the game!")
@@ -109,7 +114,6 @@ class TriviaServer:
                 conn.sendall(f"{question}\n".encode())
             except Exception as e:
                 print(f"Error sending to client {player_name}: {e}")
-
 
 
     def tcp_server(self):
