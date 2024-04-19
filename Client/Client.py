@@ -4,7 +4,7 @@ import select
 import sys
 import uuid
 import random
-import time
+
 
 # Import platform-specific libraries for capturing key presses
 if sys.platform == 'win32':
@@ -39,8 +39,7 @@ class TriviaClient:
     def __init__(self):
         base_name = random.choice(self.PLAYER_NAMES)
         unique_id = str(uuid.uuid4())[:8]  # Increase length for more uniqueness
-        timestamp = str(int(time.time()))
-        self.player_name = f"{base_name}_{timestamp}_{unique_id}"
+        self.player_name = f"{base_name}_{unique_id}"
         self.tcp_socket = None
 
     def listen_udp(self):
@@ -69,18 +68,33 @@ class TriviaClient:
             self.tcp_socket.close()
 
     def game_loop(self):
-        while True:
-            ready = select.select([self.tcp_socket], [], [], 0.1)
-            if ready[0]:
-                data = self.tcp_socket.recv(self.BUFFER_SIZE).decode()
-                if data:
-                    print(data, end='')
-                    if "Game over!" in data:
-                        print("Server disconnected, listening for offer requests...")
-                        return  # Exit the game loop and go back to listening for UDP offers
-                    elif 'True or false' in data:
-                        answer = get_keypress()
-                        self.tcp_socket.sendall(f"{answer}\n".encode())
+        # This flag controls the loop and is set to False when the game should end.
+        self.game_running = True
+
+        # Thread for handling keypresses
+        keypress_thread = threading.Thread(target=self.handle_keypress)
+        keypress_thread.start()
+
+        # Main loop for handling incoming messages
+        try:
+            while self.game_running:
+                ready = select.select([self.tcp_socket], [], [], 0.1)
+                if ready[0]:
+                    data = self.tcp_socket.recv(self.BUFFER_SIZE).decode()
+                    if data:
+                        print(data, end='')
+                        if "Game over!" in data:
+                            print("Server disconnected, listening for offer requests...")
+                            self.game_running = False  # Stop the game loop
+        finally:
+            self.tcp_socket.close()
+            keypress_thread.join()  # Wait for the keypress thread to finish
+
+    def handle_keypress(self):
+        while self.game_running:
+            answer = get_keypress()
+            if self.game_running:  # Check again in case the game ended while waiting for a key press
+                self.tcp_socket.sendall(f"{answer}\n".encode())
 
 
 def main():

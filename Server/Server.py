@@ -27,9 +27,9 @@ class TriviaServer:
             {"question": "True or false: The Sea of Galilee is a freshwater lake.", "answer": True},
             {"question": "True or false: The Yarkon River is in Jerusalem.", "answer": False},
             {"question": "True or false: Israel shares a border with Lebanon.", "answer": True},
-            {"question": "True or false: The Golan Heights is a mountain range in eastern Israel.", "answer": False}
         ]
         self.current_question = None
+        self.broadcast_thread = None  # Keep track of the broadcast thread
 
     def broadcast_udp(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
@@ -65,7 +65,7 @@ class TriviaServer:
                         break  # Exit the loop as the game is over
                     else:
                         # Send a message to this client only, do not disqualify or remove
-                        conn.sendall("Wrong answer, try again!\n".encode())
+                        conn.sendall("Wrong answer, try again next round!\n".encode())
                         # Do not break here; let the client stay for the next question or round
 
         except Exception as e:
@@ -99,7 +99,7 @@ class TriviaServer:
             conn.close()
         self.clients = []
         self.game_in_progress = False
-        threading.Thread(target=self.broadcast_udp).start()
+        self.ensure_single_broadcast_thread()
 
     def start_game(self):
         if not self.clients or self.game_in_progress:
@@ -127,10 +127,15 @@ class TriviaServer:
                 threading.Thread(target=self.handle_client, args=(conn, addr)).start()
                 # Here you can also start a new thread to listen for client answers
 
+    def ensure_single_broadcast_thread(self):
+        if self.broadcast_thread is not None and self.broadcast_thread.is_alive():
+            return  # Already broadcasting
+        self.broadcast_thread = threading.Thread(target=self.broadcast_udp)
+        self.broadcast_thread.start()
 
 def main():
     server = TriviaServer()
-    threading.Thread(target=server.broadcast_udp).start()
+    server.ensure_single_broadcast_thread()
     server.tcp_server()
 
 
