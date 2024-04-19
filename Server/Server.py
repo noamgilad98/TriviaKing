@@ -17,7 +17,6 @@ class TriviaServer:
         self.game_in_progress = False
         self.player_count = 0  # Initialize player count
         self.trivia_questions = [
-            {"question": "True or false: The sun rises in the west.", "answer": False},
             {"question": "True or false: Python is a type of snake.", "answer": True},
             {"question": "True or false: Gold is heavier than silver.", "answer": True},
             # Add more questions
