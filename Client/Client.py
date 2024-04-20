@@ -42,6 +42,7 @@ class TriviaClient:
     def listen_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
       #  udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         udp_socket.bind(('', self.UDP_PORT))
 
@@ -84,7 +85,7 @@ class TriviaClient:
                             self.game_running = False
         finally:
             self.tcp_socket.close()
-            keypress_thread.join()
+
 
     def handle_keypress(self):
         while self.game_running:

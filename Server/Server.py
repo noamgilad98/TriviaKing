@@ -62,8 +62,8 @@ class TriviaServer:
             player_name = client_socket.recv(1024).decode().strip()
             print(f"Player {player_name} connected from {addr}")
             with self.lock:
-                self.clients.append({'socket': client_socket, 'name': player_name, 'active': True})
-            while True:
+                self.clients.append({'socket': client_socket, 'name': player_name, 'active': True, 'running': True})
+            while self.clients[-1]['running']:
                 answer = client_socket.recv(1024).decode().strip()
                 if player_name in self.disqualified_players:
                     continue
@@ -107,15 +107,14 @@ class TriviaServer:
                 except Exception as e:
                     print(f"Error sending to client {client['name']}: {e}")
 
+
     def reset_game(self):
         print("Resetting game and preparing a new round...")
         print("Game over, sending out offer requests...")
         self.mode_waiting_for_client = True
         with self.lock:
             for client in self.clients:
-                print("before closed")
-                client['socket'].close()
-                print("after closed")
+                client['running'] = False  # Signal the client to stop running
             self.clients.clear()
             self.disqualified_players.clear()
         self.mode_waiting_for_client = True
