@@ -93,7 +93,7 @@ class TriviaClient:
                 if ready[0]:
                     data = self.tcp_socket.recv(self.BUFFER_SIZE).decode().strip()
                     if data:
-                        print_from_server(data)
+                        print(data)
                         if "Game over!" in data:
                             print(f"{WARNING}Server disconnected, listening for offer requests...{ENDC}")
                             self.game_running = False
@@ -115,8 +115,3 @@ def main():
 if __name__ == '__main__':
     main()
 
-def print_from_server(text):
-   #remove all two or more spaces and replace with one space
-    text = ' '.join(text.split())
-    print(text)
-    

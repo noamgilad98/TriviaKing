@@ -137,8 +137,8 @@ class TriviaServer:
         
         # Create the welcome message with proper newlines and alignment
         welcome_message = "Welcome to the Mystic server, where we are answering trivia questions about Israel!\n"
-        player_list = "\n".join([f"Player {idx + 1}: {client['name']:30}" for idx, client in enumerate(self.clients)])
-        welcome_message += player_list + "\n"
+        player_list = "\n".join([f"Player {idx + 1}: {client['name']}" for idx, client in enumerate(self.clients)])
+        welcome_message += player_list + "\n==\n"
         
         # Print starting game notice
         print(f"{self.OKGREEN}Starting the game!{self.ENDC}")
