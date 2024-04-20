@@ -6,13 +6,22 @@ import time
 
 import TriviaQuestions
 
-
 class TriviaServer:
+    # ANSI Color Codes
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
     UDP_PORT = 13117
     SERVER_NAME = 'Mystic'
     MAGIC_COOKIE = 0xabcddcba
     OFFER_MESSAGE_TYPE = 0x02
-    GAME_START_DELAY = 6
+    GAME_START_DELAY = 10
 
     def __init__(self):
         self.mode_waiting_for_client = True
@@ -33,7 +42,7 @@ class TriviaServer:
             udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             return udp_socket
         except socket.error as e:
-            print("Failed to create UDP socket:", e)
+            print(f"{self.FAIL}Failed to create UDP socket: {e}{self.ENDC}")
             exit(1)
 
     def create_tcp_socket(self):
@@ -43,7 +52,7 @@ class TriviaServer:
             tcp_socket.listen()
             return tcp_socket
         except socket.error as e:
-            print("Failed to create or bind TCP socket:", e)
+            print(f"{self.FAIL}Failed to create or bind TCP socket: {e}{self.ENDC}")
             exit(1)
 
     def broadcast_offers(self):
@@ -54,20 +63,20 @@ class TriviaServer:
                 self.udp_socket.sendto(message, ('<broadcast>', self.UDP_PORT))
                 time.sleep(1)
             except Exception as e:
-                print("Error broadcasting UDP offer:", e)
+                print(f"{self.WARNING}Error broadcasting UDP offer: {e}{self.ENDC}")
                 break
 
     def handle_client(self, client_socket, addr):
         try:
             player_name = client_socket.recv(1024).decode().strip()
-            print(f"Player {player_name} connected from {addr}")
+            print(f"{self.OKBLUE}Player {player_name} connected from {addr}{self.ENDC}")
             with self.lock:
                 self.clients.append({'socket': client_socket, 'name': player_name, 'active': True, 'running': True})
             while self.clients[-1]['running']:
                 answer = client_socket.recv(1024).decode().strip()
                 if player_name in self.disqualified_players:
                     continue
-                correct = self.trivia.check_answer(answer)  # TODO nee to make is syncronize
+                correct = self.trivia.check_answer(answer)
                 if correct:
                     self.declare_winner(player_name)
                     self.reset_game()
@@ -78,20 +87,19 @@ class TriviaServer:
                         self.reset_game()
                     break
         except Exception as e:
-            print(f"Error receiving data from {addr}: {e}")
+            print(f"{self.FAIL}Error receiving data from {addr}: {e}{self.ENDC}")
         finally:
-            print("finalyyyyy, something wrong")
+            print(f"{self.WARNING}Finally, something wrong{self.ENDC}")
 
     def declare_winner(self, winner_name):
         message = f"Game over! Congratulations to the winner: {winner_name}\n"
         self.broadcast_message(message)
+        print(f"{self.OKGREEN}Game over! Congratulations to the winner: {winner_name}{self.ENDC}")
 
     def disqualify_player(self, client_socket, player_name):
         message = f"{player_name} is incorrect and disqualified!\n"
-        client_socket.send(message.encode())  # Send directly to the client's socket
-        with self.lock:
-            self.disqualified_players.add(player_name)
-            print(f"Player {player_name} has been disqualified.")
+        client_socket.send(message.encode())
+        print(f"{self.FAIL}Player {player_name} has been disqualified.{self.ENDC}")
 
     def remove_client(self, player_name, client_socket):
         with self.lock:
@@ -105,16 +113,15 @@ class TriviaServer:
                 try:
                     client['socket'].sendall(message.encode())
                 except Exception as e:
-                    print(f"Error sending to client {client['name']}: {e}")
-
+                    print(f"{self.FAIL}Error sending to client {client['name']}: {e}{self.ENDC}")
 
     def reset_game(self):
-        print("Resetting game and preparing a new round...")
-        print("Game over, sending out offer requests...")
+        print(f"{self.WARNING}Resetting game and preparing a new round...{self.ENDC}")
+        print(f"{self.WARNING}Game over, sending out offer requests...{self.ENDC}")
         self.mode_waiting_for_client = True
         with self.lock:
             for client in self.clients:
-                client['running'] = False  # Signal the client to stop running
+                client['running'] = False
             self.clients.clear()
             self.disqualified_players.clear()
         self.mode_waiting_for_client = True
@@ -127,12 +134,23 @@ class TriviaServer:
         self.mode_game_in_progress = True
         self.mode_waiting_for_client = False
         self.current_question = self.trivia.get_random_question()
-        print("Starting the game!")
+        
+        # Create the welcome message with proper newlines and alignment
+        welcome_message = "Welcome to the Mystic server, where we are answering trivia questions about Israel!\n"
+        player_list = "\n".join([f"Player {idx + 1}: {client['name']:30}" for idx, client in enumerate(self.clients)])
+        welcome_message += player_list + "\n"
+        
+        # Print starting game notice
+        print(f"{self.OKGREEN}Starting the game!{self.ENDC}")
+        client_message = welcome_message + self.current_question['question'] + "\n"
+        print(client_message)
+        
+        # Send the welcome message and the first question to each client
         for client in self.clients:
             try:
-                client['socket'].sendall(f"{self.current_question['question']}\n".encode())
+                client['socket'].sendall(client_message.encode())
             except Exception as e:
-                print(f"Error sending to client {client['name']}: {e}")
+                print(f"{self.FAIL}Error sending to client {client['name']}: {e}{self.ENDC}")
 
     def start_or_restart_timer(self):
         if self.game_start_timer is not None:
@@ -147,17 +165,15 @@ class TriviaServer:
         self.accept_tcp_connections()
 
     def accept_tcp_connections(self):
-        print(f"Server started, listening on IP address {self.tcp_socket.getsockname()[0]} and port {self.tcp_port}")
+        print(f"{self.OKBLUE}Server started, listening on IP address {self.tcp_socket.getsockname()[0]} and port {self.tcp_port}{self.ENDC}")
         while True:
             client_socket, addr = self.tcp_socket.accept()
             threading.Thread(target=self.handle_client, args=(client_socket, addr)).start()
             self.start_or_restart_timer()
 
-
 def main():
     server = TriviaServer()
     server.run_server()
-
 
 if __name__ == '__main__':
     main()
