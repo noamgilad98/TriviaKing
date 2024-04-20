@@ -84,6 +84,9 @@ class TriviaServer:
                 else:
                     self.disqualify_player(client_socket, player_name)
                     if len(self.disqualified_players) == len(self.clients):
+                        message = f"Game over! no one answered correctly\n"
+                        self.broadcast_message(message)
+                        print(f"{self.OKGREEN}Game over! no one answered correctly{self.ENDC}")
                         self.reset_game()
                     break
         except Exception as e:
@@ -98,6 +101,7 @@ class TriviaServer:
 
     def disqualify_player(self, client_socket, player_name):
         message = f"{player_name} is incorrect and disqualified!\n"
+        self.disqualified_players.add(player_name)
         client_socket.send(message.encode())
         print(f"{self.FAIL}Player {player_name} has been disqualified.{self.ENDC}")
 
