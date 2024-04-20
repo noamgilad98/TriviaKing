@@ -6,12 +6,13 @@ import time
 
 import TriviaQuestions
 
+
 class TriviaServer:
     UDP_PORT = 13117
     SERVER_NAME = 'Mystic'
     MAGIC_COOKIE = 0xabcddcba
     OFFER_MESSAGE_TYPE = 0x02
-    GAME_START_DELAY = 4
+    GAME_START_DELAY = 6
 
     def __init__(self):
         self.mode_waiting_for_client = True
@@ -48,16 +49,13 @@ class TriviaServer:
     def broadcast_offers(self):
         message = struct.pack('!Ib32sH', self.MAGIC_COOKIE, self.OFFER_MESSAGE_TYPE,
                               self.SERVER_NAME.encode().ljust(32), self.tcp_port)
-        while  self.mode_waiting_for_client:
+        while self.mode_waiting_for_client:
             try:
                 self.udp_socket.sendto(message, ('<broadcast>', self.UDP_PORT))
                 time.sleep(1)
             except Exception as e:
                 print("Error broadcasting UDP offer:", e)
                 break
-
-
-
 
     def handle_client(self, client_socket, addr):
         try:
@@ -69,7 +67,7 @@ class TriviaServer:
                 answer = client_socket.recv(1024).decode().strip()
                 if player_name in self.disqualified_players:
                     continue
-                correct = self.trivia.check_answer(answer) # TODO nee to make is syncronize
+                correct = self.trivia.check_answer(answer)  # TODO nee to make is syncronize
                 if correct:
                     self.declare_winner(player_name)
                     self.reset_game()
@@ -78,6 +76,7 @@ class TriviaServer:
                     self.disqualify_player(client_socket, player_name)
                     if len(self.disqualified_players) == len(self.clients):
                         self.reset_game()
+                    break
         except Exception as e:
             print(f"Error receiving data from {addr}: {e}")
         finally:
@@ -86,15 +85,13 @@ class TriviaServer:
     def declare_winner(self, winner_name):
         message = f"Game over! Congratulations to the winner: {winner_name}\n"
         self.broadcast_message(message)
-        
 
     def disqualify_player(self, client_socket, player_name):
-        message = f"{player_name} is incorrect and disqualified!"
-        client_socket.send(message.encode())
+        message = f"{player_name} is incorrect and disqualified!\n"
+        client_socket.send(message.encode())  # Send directly to the client's socket
         with self.lock:
             self.disqualified_players.add(player_name)
             print(f"Player {player_name} has been disqualified.")
-            
 
     def remove_client(self, player_name, client_socket):
         with self.lock:
@@ -103,7 +100,6 @@ class TriviaServer:
         client_socket.close()
 
     def broadcast_message(self, message):
-
         with self.lock:
             for client in self.clients:
                 try:
@@ -117,7 +113,9 @@ class TriviaServer:
         self.mode_waiting_for_client = True
         with self.lock:
             for client in self.clients:
+                print("before closed")
                 client['socket'].close()
+                print("after closed")
             self.clients.clear()
             self.disqualified_players.clear()
         self.mode_waiting_for_client = True
@@ -145,7 +143,7 @@ class TriviaServer:
 
     def run_server(self):
         # Start UDP broadcasting in a separate thread
-        threading.Thread(target=self.broadcast_offers).start()
+        threading.Thread(target=self.broadcast_offers, daemon=True).start()
         # Start handling TCP connections
         self.accept_tcp_connections()
 
@@ -160,6 +158,7 @@ class TriviaServer:
 def main():
     server = TriviaServer()
     server.run_server()
+
 
 if __name__ == '__main__':
     main()
