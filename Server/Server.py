@@ -74,7 +74,8 @@ class TriviaServer:
                 self.clients.append({'socket': client_socket, 'name': player_name, 'active': True, 'running': True})
             while self.clients[-1]['running']:
                 answer = client_socket.recv(1024).decode().strip()
-                if player_name in self.disqualified_players:
+                #if player discolified or game not running continue
+                if player_name in self.disqualified_players or not self.mode_game_in_progress:
                     continue
                 correct = self.trivia.check_answer(answer)
                 if correct:
@@ -84,20 +85,21 @@ class TriviaServer:
                 else:
                     self.disqualify_player(client_socket, player_name)
                     if len(self.disqualified_players) == len(self.clients):
-                        message = f"Game over! no one answered correctly\n"
-                        self.broadcast_message(message)
-                        print(f"{self.OKGREEN}Game over! no one answered correctly{self.ENDC}")
+                        self.declare_no_winner()
                         self.reset_game()
                     break
         except Exception as e:
-            print(f"{self.FAIL}Error receiving data from {addr}: {e}{self.ENDC}")
-        finally:
-            print(f"{self.WARNING}Finally, something wrong{self.ENDC}")
+            print()
 
     def declare_winner(self, winner_name):
         message = f"Game over! Congratulations to the winner: {winner_name}\n"
         self.broadcast_message(message)
         print(f"{self.OKGREEN}Game over! Congratulations to the winner: {winner_name}{self.ENDC}")
+        
+    def declare_no_winner(self):
+        message = f"Game over! no one answered correctly in time\n"
+        self.broadcast_message(message)
+        print(f"{self.OKGREEN}Game over! no one answered correctly in time{self.ENDC}")
 
     def disqualify_player(self, client_socket, player_name):
         message = f"{player_name} is incorrect and disqualified!\n"
@@ -105,11 +107,7 @@ class TriviaServer:
         client_socket.send(message.encode())
         print(f"{self.FAIL}Player {player_name} has been disqualified.{self.ENDC}")
 
-    def remove_client(self, player_name, client_socket):
-        with self.lock:
-            self.clients = [client for client in self.clients if client['socket'] != client_socket]
-            self.disqualified_players.discard(player_name)
-        client_socket.close()
+   
 
     def broadcast_message(self, message):
         with self.lock:
@@ -122,10 +120,10 @@ class TriviaServer:
     def reset_game(self):
         print(f"{self.WARNING}Resetting game and preparing a new round...{self.ENDC}")
         print(f"{self.WARNING}Game over, sending out offer requests...{self.ENDC}")
-        self.mode_waiting_for_client = True
         with self.lock:
             for client in self.clients:
                 client['running'] = False
+                client['socket'].close()
             self.clients.clear()
             self.disqualified_players.clear()
         self.mode_waiting_for_client = True
@@ -148,14 +146,17 @@ class TriviaServer:
         print(f"{self.OKGREEN}Starting the game!{self.ENDC}")
         client_message = welcome_message + self.current_question['question'] + "\n"
         print(client_message)
+        self.broadcast_message(client_message)
+        #start timer for question and if no one answered in time declare call declare_no_winner and reset game
+        threading.Timer(10, self.check_answers).start()
         
-        # Send the welcome message and the first question to each client
-        for client in self.clients:
-            try:
-                client['socket'].sendall(client_message.encode())
-            except Exception as e:
-                print(f"{self.FAIL}Error sending to client {client['name']}: {e}{self.ENDC}")
-
+        
+    def check_answers(self):
+        if not self.mode_game_in_progress:
+            return
+        self.declare_no_winner
+        self.reset_game()
+    
     def start_or_restart_timer(self):
         if self.game_start_timer is not None:
             self.game_start_timer.cancel()

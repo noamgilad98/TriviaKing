@@ -31,13 +31,12 @@ def get_keypress():
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
             try:
-                tty.setraw(sys.stdin.fileno())
+                tty.setraw(fd)
                 key = sys.stdin.read(1).upper()
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if key in valid_keys:
             return key
-        
 
 class TriviaClient:
     UDP_PORT = 13117
@@ -51,12 +50,16 @@ class TriviaClient:
         unique_id = str(uuid.uuid4())[:8]  # Ensure uniqueness
         self.player_name = f"{base_name} {secondary_name} {unique_id}"
         self.tcp_socket = None
+        self.game_running = False
+        
 
     def listen_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        try:
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except AttributeError:
+            pass  # Some platforms don't support REUSEPORT
         udp_socket.bind(('', self.UDP_PORT))
         print(f"{OKBLUE}Client started, listening for offer requests...{ENDC}")
 
@@ -79,8 +82,7 @@ class TriviaClient:
             self.game_loop()
         except Exception as e:
             print(f'{FAIL}Error connecting to server: {e}{ENDC}')
-        finally:
-            self.tcp_socket.close()
+
 
     def game_loop(self):
         self.game_running = True
@@ -92,21 +94,22 @@ class TriviaClient:
                 ready = select.select([self.tcp_socket], [], [], 0.1)
                 if ready[0]:
                     data = self.tcp_socket.recv(self.BUFFER_SIZE).decode().strip()
-                    if data:
+                    if data == "":
+                        print(f"{WARNING}Server disconnected, listening for offer requests...{ENDC}")
+                        self.game_running = False
+                    elif data:
                         print(data)
-                        if "Game over!" in data:
-                            print(f"{WARNING}Server disconnected, listening for offer requests...{ENDC}")
-                            self.game_running = False
         finally:
-            self.tcp_socket.close()
+            self.game_running = False
 
     def handle_keypress(self):
         while self.game_running:
             answer = get_keypress()
-            if self.game_running:
-                self.tcp_socket.sendall(f"{answer}\n".encode())
-                
-    
+            try:
+                if self.game_running:
+                    self.tcp_socket.sendall(f"{answer}\n".encode())
+            except Exception as e:
+                print(f"{FAIL}Error sending keypress: {e}{ENDC}")
 
 def main():
     client = TriviaClient()
@@ -114,4 +117,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
