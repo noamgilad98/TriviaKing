@@ -3,6 +3,7 @@ import struct
 import threading
 import random
 import time
+from Configuration import Config
 
 import TriviaQuestions
 
@@ -17,12 +18,11 @@ class TriviaServer:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-    # Configuration constants
-    UDP_PORT = 13117  # UDP port used for broadcasting offers
-    SERVER_NAME = 'Mystic'  # Name of the server
-    MAGIC_COOKIE = 0xabcddcba  # Magic cookie for message validation
-    OFFER_MESSAGE_TYPE = 0x02  # Message type indicating an offer message
-    GAME_START_DELAY = 10  # Delay before starting the game after receiving clients
+    UDP_PORT = Config.UDP_PORT
+    SERVER_NAME = Config.SERVER_NAME
+    MAGIC_COOKIE = Config.MAGIC_COOKIE
+    OFFER_MESSAGE_TYPE = Config.OFFER_MESSAGE_TYPE
+    GAME_START_DELAY = Config.GAME_START_DELAY
 
     def __init__(self):
         # Initializing server state
